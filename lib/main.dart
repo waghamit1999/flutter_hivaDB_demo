@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/adapters.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:use_of_hive_database/task.dart';
+import 'package:uuid/uuid.dart';
 
-late Box appDataBox;
+late Box<Task> tasksDatabase;
 void main() async {
   await Hive.initFlutter();
-  appDataBox = await Hive.openBox('appDataBox');
+  Hive.registerAdapter(TaskAdapter());
+  tasksDatabase = await Hive.openBox<Task>('tasksDatabase');
   runApp(const MyApp());
 }
 
@@ -14,12 +17,13 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme:
+            ColorScheme.fromSeed(seedColor: Colors.deepOrange.shade100),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MyHomePage(title: 'Daily Task Manager'),
     );
   }
 }
@@ -34,20 +38,13 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      _counter++;
-      appDataBox.put('counterValue', _counter);
-    });
-  }
+  List<Task> tasks = [];
+  bool? isChecked = false;
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
-    _counter = appDataBox.get('counterValue', defaultValue: 0);
+    tasks = tasksDatabase.values.toList();
   }
 
   @override
@@ -58,22 +55,119 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
       ),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: ListView.builder(
+              itemCount: tasks.length,
+              itemBuilder: (context, index) {
+                final task = tasks[index];
+                return Dismissible(
+                  key: UniqueKey(),
+                  direction: DismissDirection.startToEnd,
+                  onDismissed: (_) {
+                    setState(() {
+                      tasks.removeAt(index);
+                      tasksDatabase.deleteAt(index);
+                    });
+                  },
+                  background: Container(
+                    color: Colors.red,
+                    alignment: Alignment.centerLeft,
+                    child: const Icon(
+                      Icons.delete_outline_outlined,
+                      color: Colors.white,
+                    ),
+                  ),
+                  child: Card(
+                    child: ListTile(
+                      title: Text(
+                        task.title,
+                        style: TextStyle(
+                          decoration: task.isCompleted
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
+                        ),
+                      ),
+                      subtitle: Text(
+                        task.description,
+                        style: TextStyle(
+                          decoration: task.isCompleted
+                              ? TextDecoration.lineThrough
+                              : null,
+                        ),
+                      ),
+                      trailing: Wrap(
+                        spacing: 12,
+                        children: <Widget>[
+                          Checkbox(
+                              value: task.isCompleted,
+                              onChanged: (value) {
+                                isChecked = value;
+                                task.isCompleted = isChecked!;
+                                setState(() {
+                                  tasksDatabase.putAt(index, task);
+                                });
+                              }),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Icon(Icons.keyboard_arrow_right),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
+        onPressed: () {
+          final taskNameTEC = TextEditingController();
+          final taskDescriptionTEC = TextEditingController();
+          showDialog(
+              context: context,
+              builder: (context) {
+                return AlertDialog(
+                  title: Text('Add Task'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: taskNameTEC,
+                        decoration: InputDecoration(hintText: 'Task Name'),
+                      ),
+                      TextField(
+                        controller: taskDescriptionTEC,
+                        decoration:
+                            InputDecoration(hintText: 'Task Description'),
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                        onPressed: Navigator.of(context).pop,
+                        child: Text('Cancel')),
+                    ElevatedButton(
+                        onPressed: () {
+                          final taskId = Uuid().v4();
+                          isChecked = false;
+                          final task = Task(
+                              id: taskId,
+                              title: taskNameTEC.text,
+                              description: taskDescriptionTEC.text,
+                              isCompleted: isChecked!);
+
+                          tasks.add(task);
+                          tasksDatabase.add(task);
+                          Navigator.of(context).pop();
+                          setState(() {});
+                        },
+                        child: Text('Save')),
+                  ],
+                );
+              });
+        },
+        tooltip: 'Add',
         child: const Icon(Icons.add),
       ),
     );
